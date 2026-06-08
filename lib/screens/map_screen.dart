@@ -4,7 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../constants/strings.dart';
+import '../models/walk_point.dart';
 import '../providers/location_provider.dart';
+import '../providers/walk_recorder_provider.dart';
+import '../widgets/stats_panel.dart';
 
 class MapScreen extends ConsumerStatefulWidget {
   const MapScreen({super.key});
@@ -26,6 +29,9 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final recorder = ref.watch(walkRecorderProvider);
+    final recorderNotifier = ref.read(walkRecorderProvider.notifier);
+
     ref.listen(locationStreamProvider, (_, next) {
       next.whenData((position) {
         final latLng = LatLng(position.latitude, position.longitude);
@@ -34,6 +40,11 @@ class _MapScreenState extends ConsumerState<MapScreen> {
           _mapController.move(latLng, 16);
           _centered = true;
         }
+        recorderNotifier.addPoint(WalkPoint(
+          latitude: position.latitude,
+          longitude: position.longitude,
+          timestamp: position.timestamp,
+        ));
       });
 
       if (next is AsyncError) {
@@ -42,6 +53,10 @@ class _MapScreenState extends ConsumerState<MapScreen> {
         );
       }
     });
+
+    final routePoints = recorder.points
+        .map((p) => LatLng(p.latitude, p.longitude))
+        .toList();
 
     return Scaffold(
       body: Stack(
@@ -58,6 +73,16 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                     'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.virtualwalker.app',
               ),
+              if (routePoints.length >= 2)
+                PolylineLayer(
+                  polylines: [
+                    Polyline(
+                      points: routePoints,
+                      color: Colors.blue,
+                      strokeWidth: 4,
+                    ),
+                  ],
+                ),
               if (_currentPosition != null)
                 CircleLayer(
                   circles: [
@@ -79,6 +104,12 @@ class _MapScreenState extends ConsumerState<MapScreen> {
           ),
           if (_currentPosition == null)
             const Center(child: CircularProgressIndicator()),
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: const StatsPanel(),
+          ),
         ],
       ),
     );
