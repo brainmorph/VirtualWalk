@@ -1,19 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:virtualwalker/constants/strings.dart';
 import 'package:virtualwalker/main.dart';
+import 'package:virtualwalker/screens/map_screen.dart';
 
 void main() {
   group('VirtualWalkerApp', () {
-    testWidgets('renders app title', (tester) async {
-      await tester.pumpWidget(
-        const ProviderScope(child: VirtualWalkerApp()),
-      );
-
-      expect(find.text(AppStrings.appName), findsOneWidget);
-    });
-
     testWidgets('uses Material3 theme', (tester) async {
       await tester.pumpWidget(
         const ProviderScope(child: VirtualWalkerApp()),
@@ -23,12 +16,20 @@ void main() {
       expect(app.theme?.useMaterial3, isTrue);
     });
 
-    testWidgets('wraps content in a Scaffold', (tester) async {
+    testWidgets('home is MapScreen', (tester) async {
       await tester.pumpWidget(
         const ProviderScope(child: VirtualWalkerApp()),
       );
 
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.byType(MapScreen), findsOneWidget);
+    });
+
+    testWidgets('contains a FlutterMap', (tester) async {
+      await tester.pumpWidget(
+        const ProviderScope(child: VirtualWalkerApp()),
+      );
+
+      expect(find.byType(FlutterMap), findsOneWidget);
     });
   });
 }
