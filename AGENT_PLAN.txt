@@ -1,0 +1,230 @@
+VIRTUALWALKER - FLUTTER APP BUILD PLAN
+=======================================
+Target device: Pixel 7a (Android)
+Language: Dart / Flutter
+Maps: flutter_map with OpenStreetMap tiles (no API key required)
+GPS: geolocator package
+State: riverpod
+Storage: hive + hive_flutter
+
+GENERAL RULES FOR THE AGENT
+-----------------------------
+- Use null safety throughout (Dart 3+)
+- Use Riverpod 2.x (annotations style with @riverpod)
+- Do not use deprecated Flutter APIs
+- Every screen must be a ConsumerWidget or ConsumerStatefulWidget
+- Request permissions at runtime, never assume they are granted
+- All async errors must be caught and shown to the user via SnackBar
+- Do not hardcode strings that the user will see; put them in a constants file
+- OSM tile usage requires attribution: show "© OpenStreetMap contributors" on the map at all times
+- After each phase, the app must compile and run on a physical Android device with no fatal errors
+
+
+PHASE 1 - PROJECT SCAFFOLD
+---------------------------
+Goal: Bare Flutter project with all dependencies installed and compiling.
+
+Steps:
+1. Run: flutter create --org com.virtualwalker --platforms android virtualwalker
+2. Delete the default counter app code in lib/main.dart
+3. Add the following dependencies to pubspec.yaml:
+     flutter_map: ^6.1.0
+     latlong2: ^0.9.0
+     geolocator: ^11.0.0
+     riverpod: ^2.5.1
+     flutter_riverpod: ^2.5.1
+     riverpod_annotation: ^2.3.5
+     hive: ^2.2.3
+     hive_flutter: ^1.1.0
+     uuid: ^4.3.3
+4. Add the following dev dependencies:
+     build_runner: ^2.4.9
+     riverpod_generator: ^2.4.0
+     hive_generator: ^2.0.1
+5. In android/app/src/main/AndroidManifest.xml add inside the <manifest> tag:
+     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+6. In android/app/build.gradle set minSdkVersion to 21
+7. Create the following empty directories:
+     lib/models/
+     lib/providers/
+     lib/screens/
+     lib/widgets/
+     lib/constants/
+8. Create lib/constants/strings.dart with app name and OSM attribution string
+9. Create lib/main.dart with ProviderScope wrapping a MaterialApp that shows a placeholder Scaffold with title "VirtualWalker"
+10. Run: flutter pub get
+11. Run: flutter build apk --debug
+    Confirm: build succeeds with no errors
+
+Testable outcome: App installs and shows a blank screen titled "VirtualWalker" with no crashes.
+
+
+PHASE 2 - MAP DISPLAY
+----------------------
+Goal: Full-screen OpenStreetMap map visible, centered on a default location, with OSM attribution.
+
+Steps:
+1. Create lib/screens/map_screen.dart
+   - Widget type: ConsumerStatefulWidget
+   - Use flutter_map's FlutterMap widget filling the screen
+   - MapOptions: initialCenter LatLng(37.7749, -122.4194), initialZoom 13
+   - Add TileLayer using URL template: https://tile.openstreetmap.org/{z}/{x}/{y}.png
+   - Set userAgentPackageName to 'com.virtualwalker.app'
+   - Add RichAttributionWidget (built into flutter_map) showing "© OpenStreetMap contributors"
+2. Update lib/main.dart home to MapScreen()
+3. Run: flutter run
+   Confirm: map tiles load, map is pannable and zoomable, attribution visible
+
+Testable outcome: OpenStreetMap renders correctly on the Pixel 7a with no tile errors.
+
+
+PHASE 3 - GPS AND CURRENT LOCATION
+------------------------------------
+Goal: App requests location permission, gets the user's real GPS position, and shows a blue circle marker on the map at that position. Map re-centers on the user's location when it first loads.
+
+Steps:
+1. Create lib/providers/location_provider.dart
+   - Use riverpod @riverpod annotation to create a StreamProvider named locationStream
+   - Inside, check permission with geolocator.checkPermission()
+   - If denied, call geolocator.requestPermission()
+   - If permanently denied, throw a descriptive exception
+   - Return Geolocator.getPositionStream() with LocationSettings(accuracy: LocationAccuracy.best, distanceFilter: 5)
+   - distanceFilter of 5 means only emit a new position if the user moved at least 5 meters
+2. Run: dart run build_runner build --delete-conflicting-outputs
+   Confirm: generated files are created without errors
+3. Update lib/screens/map_screen.dart
+   - Watch the locationStream provider
+   - On data: store the current LatLng in local state, move the map camera to it on first fix only (use a bool _centered flag)
+   - On error: show a SnackBar with the error message
+   - On loading: show a centered CircularProgressIndicator over the map
+   - Add a CircleLayer to the FlutterMap with a single circle at the current position (radius 8, blue fill, white border)
+4. Run: flutter run
+   Confirm: blue dot appears at actual GPS location, map centers on first fix, dot updates as user moves
+
+Testable outcome: Blue dot tracks real device GPS position on the map.
+
+
+PHASE 4 - WALK RECORDING
+--------------------------
+Goal: User can start, pause, and stop a walk. While recording, a polyline is drawn on the map tracing the route. Live stats (distance in meters, elapsed time) are shown in a panel at the bottom of the screen.
+
+Steps:
+1. Create lib/models/walk_point.dart
+   - Simple class with fields: double latitude, double longitude, DateTime timestamp
+   - No Hive annotations yet (added in Phase 5)
+2. Create lib/providers/walk_recorder_provider.dart
+   - Use @riverpod annotation, class-based Notifier named WalkRecorder
+   - State is a WalkRecorderState object (create this as a plain Dart class with fields):
+       RecordingStatus status  (enum: idle, recording, paused)
+       List<WalkPoint> points
+       double totalDistanceMeters
+       DateTime? startTime
+       DateTime? pausedAt
+       Duration pausedDuration
+   - Expose methods:
+       void start()   - sets status to recording, records startTime
+       void pause()   - sets status to paused, records pausedAt
+       void resume()  - sets status to recording, adds pausedAt delta to pausedDuration
+       void stop()    - sets status to idle, returns final state (does not clear yet)
+       void addPoint(WalkPoint point) - appends point to list, adds distance from previous point using geolocator.distanceBetween(), only if status is recording
+       void clear()   - resets everything to initial state
+   - elapsed time is computed: if recording, DateTime.now() minus startTime minus pausedDuration; if paused, pausedAt minus startTime minus pausedDuration
+3. Update lib/screens/map_screen.dart
+   - Watch the walkRecorder provider
+   - In the location stream callback, call walkRecorder.addPoint() with the new position
+   - Add a PolylineLayer to FlutterMap using the list of points from the recorder state
+     Polyline: color blue, strokeWidth 4
+   - Create lib/widgets/stats_panel.dart
+       A Container anchored at the bottom of the screen (above the attribution)
+       Shows: distance formatted as X.XX km or X m if under 1000m
+       Shows: elapsed time formatted as HH:MM:SS
+       Shows: three buttons - Start (green), Pause/Resume (amber), Stop (red)
+       Buttons are enabled/disabled based on RecordingStatus
+       Start only enabled when idle
+       Pause/Resume only enabled when recording or paused
+       Stop only enabled when recording or paused
+   - Wire button taps to walkRecorder methods
+4. Run: flutter run
+   Confirm: tapping Start begins drawing a line as you walk, Pause stops adding points, Resume continues, Stop leaves the line on screen, stats update in real time
+
+Testable outcome: A full walk can be recorded and visualized end-to-end without saving.
+
+
+PHASE 5 - SAVE AND HISTORY
+----------------------------
+Goal: Completed walks are saved to local storage. A history screen lists saved walks. Tapping a walk shows it on a map.
+
+Steps:
+1. Update lib/models/walk_point.dart
+   - Add Hive annotations: @HiveType(typeId: 0), @HiveField on each field
+   - Run: dart run build_runner build --delete-conflicting-outputs
+2. Create lib/models/saved_walk.dart
+   - Hive annotations: @HiveType(typeId: 1)
+   - Fields:
+       @HiveField(0) String id  (UUID)
+       @HiveField(1) DateTime startTime
+       @HiveField(2) double totalDistanceMeters
+       @HiveField(3) Duration totalDuration
+       @HiveField(4) List<WalkPoint> points
+3. Update lib/main.dart
+   - Initialize Hive before runApp: await Hive.initFlutter()
+   - Register adapters: Hive.registerAdapter(WalkPointAdapter()), Hive.registerAdapter(SavedWalkAdapter())
+   - Open box: await Hive.openBox<SavedWalk>('walks')
+4. Create lib/providers/walk_history_provider.dart
+   - @riverpod class WalkHistory extends Notifier
+   - State is List<SavedWalk> loaded from Hive box on build
+   - Method: void saveWalk(SavedWalk walk) - adds to box and updates state
+   - Method: void deleteWalk(String id) - removes from box and updates state
+5. Update lib/providers/walk_recorder_provider.dart
+   - Add method: SavedWalk buildSavedWalk() - constructs a SavedWalk from current state using uuid package for id
+6. Update lib/screens/map_screen.dart
+   - When Stop is tapped: call recorder.buildSavedWalk(), pass to walkHistory.saveWalk(), then call recorder.clear()
+   - Show a SnackBar: "Walk saved!"
+   - Add a history IconButton to the AppBar that navigates to HistoryScreen
+7. Create lib/screens/history_screen.dart
+   - ConsumerWidget
+   - Watch walkHistoryProvider
+   - Show a ListView of saved walks, each item shows: date, distance, duration
+   - Swipe to delete (Dismissible widget) calls walkHistory.deleteWalk()
+   - Tap navigates to WalkDetailScreen passing the SavedWalk
+8. Create lib/screens/walk_detail_screen.dart
+   - ConsumerWidget, accepts SavedWalk as constructor argument
+   - Shows a full-screen FlutterMap (same tile setup as Phase 2)
+   - Renders the saved route as a PolylineLayer
+   - Map bounds auto-fit to the route using MapController.fitCamera()
+   - Shows stats below the map: date, distance, duration
+9. Run: flutter run
+   Confirm: complete a walk, stop it, verify it appears in history, tap it, verify route displays correctly, delete it, verify it is removed
+
+Testable outcome: Walks persist across app restarts and are viewable in detail.
+
+
+PHASE 6 - POLISH AND EDGE CASES
+---------------------------------
+Goal: Handle all failure modes gracefully. App feels complete and stable.
+
+Steps:
+1. Permission permanently denied: show a dialog explaining why location is needed with a button that opens app settings via geolocator.openAppSettings()
+2. No GPS signal: if the location stream has not emitted within 10 seconds of starting recording, show a SnackBar "Waiting for GPS signal..."
+3. Low accuracy filter: in walk_recorder_provider.addPoint(), skip points where position.accuracy > 25 meters
+4. Map centering button: add a FloatingActionButton (locate icon) that re-centers the map on the current position when tapped
+5. Empty history state: if the walk list is empty, show a centered message "No walks yet. Go for a walk!" instead of an empty list
+6. Confirm before stop: when Stop is tapped while recording, show an AlertDialog asking "Stop and save this walk?" with Cancel and Stop & Save buttons
+7. Handle app going to background while paused: no action needed (riverpod state persists in memory for the session)
+8. Run: flutter run
+   Walk through all edge cases manually on the Pixel 7a
+
+Testable outcome: App handles all error states without crashing. UX is clear and complete.
+
+
+FINAL CHECKLIST BEFORE SHIPPING
+---------------------------------
+- flutter analyze returns no errors or warnings
+- flutter test passes (if any tests were written)
+- OSM attribution is visible on every screen that shows a map
+- App works with location permission denied (shows error, does not crash)
+- App works with location permission granted (tracks correctly)
+- Saved walks survive killing and restarting the app
+- Map tiles load on wifi and on mobile data
+- No hardcoded API keys or secrets anywhere in the code
