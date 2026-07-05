@@ -24,7 +24,7 @@ Stream<Position> locationStream(LocationStreamRef ref) async* {
   yield* Geolocator.getPositionStream(
     locationSettings: const LocationSettings(
       accuracy: LocationAccuracy.best,
-      distanceFilter: 5,
+      distanceFilter: 0,
     ),
   );
 }

@@ -2,6 +2,7 @@ class AppStrings {
   AppStrings._();
 
   static const appName = 'VirtualWalker';
+  static const version = 'v0.0.22';
   static const osmAttribution = '© OpenStreetMap contributors';
   static const locationPermissionDenied =
       'Location permission is required to track your walk.';

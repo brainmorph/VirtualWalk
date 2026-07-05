@@ -3,8 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'constants/strings.dart';
 import 'screens/map_screen.dart';
+import 'services/foreground_service.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  ForegroundService.init();
   runApp(const ProviderScope(child: VirtualWalkerApp()));
 }
 
