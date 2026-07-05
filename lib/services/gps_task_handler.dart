@@ -46,6 +46,9 @@ class GpsTaskHandler extends TaskHandler {
           'latitude': position.latitude,
           'longitude': position.longitude,
           'accuracy': position.accuracy,
+          'altitude': position.altitude,
+          'speed': position.speed,
+          'heading': position.heading,
           'timestamp': position.timestamp.millisecondsSinceEpoch,
         });
       },

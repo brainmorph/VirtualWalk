@@ -41,6 +41,7 @@ dependencies:
   hive_flutter: ^1.1.0
   uuid: ^4.3.3
   flutter_foreground_task: ^9.0.0
+  flutter_file_dialog: ^3.0.2
 
 dev_dependencies:
   flutter_test:

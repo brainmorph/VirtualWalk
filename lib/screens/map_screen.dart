@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_file_dialog/flutter_file_dialog.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
@@ -11,6 +14,8 @@ import '../providers/gps_settings_provider.dart';
 import '../providers/location_provider.dart';
 import '../providers/walk_recorder_provider.dart';
 import '../services/foreground_service.dart';
+import '../services/walk_exporter.dart';
+import '../services/walk_importer.dart';
 import '../widgets/stats_panel.dart';
 
 /// Selectable GPS snapshot intervals: seconds paired with their menu label.
@@ -45,6 +50,9 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   // completes — two simultaneous permission dialogs cause one to be denied.
   bool _permissionsReady = false;
 
+  // A previously exported walk loaded from CSV, shown as its own route.
+  List<LatLng>? _importedRoute;
+
   @override
   void initState() {
     super.initState();
@@ -74,6 +82,10 @@ class _MapScreenState extends ConsumerState<MapScreen> {
           latitude: lat,
           longitude: lng,
           timestamp: DateTime.fromMillisecondsSinceEpoch(tsMs),
+          accuracy: data['accuracy'] as double?,
+          altitude: data['altitude'] as double?,
+          speed: data['speed'] as double?,
+          heading: data['heading'] as double?,
         ));
 
     if (mounted) {
@@ -83,6 +95,89 @@ class _MapScreenState extends ConsumerState<MapScreen> {
         _centered = true;
       }
     }
+  }
+
+  Future<void> _offerSaveWalk(WalkRecorderState walk) async {
+    final pointCount = walk.points.length;
+    final save = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text(AppStrings.saveWalkTitle),
+        content: Text('$pointCount points recorded.\n${AppStrings.saveWalkBody}'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text(AppStrings.saveWalkDiscard),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(AppStrings.saveWalkSave),
+          ),
+        ],
+      ),
+    );
+    if (save != true) return;
+
+    // System save dialog: the user picks the destination (Downloads, Drive,
+    // SD card …), so the file lives outside the app and survives uninstall.
+    final savedPath = await FlutterFileDialog.saveFile(
+      params: SaveFileDialogParams(
+        data: WalkExporter.toCsvBytes(walk.points),
+        fileName: WalkExporter.suggestedFileName(
+            walk.startTime ?? walk.points.first.timestamp),
+      ),
+    );
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(savedPath != null
+            ? AppStrings.saveWalkDone
+            : AppStrings.saveWalkCancelled),
+      ),
+    );
+  }
+
+  Future<void> _importWalk() async {
+    final path = await FlutterFileDialog.pickFile(
+      params: const OpenFileDialogParams(
+        dialogType: OpenFileDialogType.document,
+        fileExtensionsFilter: ['csv'],
+      ),
+    );
+    if (path == null) return; // user cancelled
+
+    List<WalkPoint> points = const [];
+    try {
+      points = WalkImporter.fromCsv(await File(path).readAsString());
+    } on FileSystemException {
+      // fall through to the empty-points error below
+    }
+    if (!mounted) return;
+
+    if (points.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(AppStrings.importWalkFailed)),
+      );
+      return;
+    }
+
+    final route =
+        points.map((p) => LatLng(p.latitude, p.longitude)).toList();
+    setState(() => _importedRoute = route);
+    _mapController.fitCamera(
+      CameraFit.coordinates(
+        coordinates: route,
+        padding: const EdgeInsets.all(48),
+      ),
+    );
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Imported walk: ${points.length} points.')),
+    );
+  }
+
+  void _clearImportedWalk() {
+    setState(() => _importedRoute = null);
   }
 
   void _recenter() {
@@ -163,6 +258,14 @@ class _MapScreenState extends ConsumerState<MapScreen> {
         setState(() => _serviceGpsActive = false);
         ForegroundService.stopService();
       }
+
+      // Walk just ended with data on board — offer to export it before the
+      // next start clears it.
+      if (next.status == RecordingStatus.idle &&
+          prev?.status != RecordingStatus.idle &&
+          next.points.isNotEmpty) {
+        _offerSaveWalk(next);
+      }
     });
 
     // When the GPS rate changes while recording, forward it to the task
@@ -192,6 +295,10 @@ class _MapScreenState extends ConsumerState<MapScreen> {
               latitude: position.latitude,
               longitude: position.longitude,
               timestamp: position.timestamp,
+              accuracy: position.accuracy,
+              altitude: position.altitude,
+              speed: position.speed,
+              heading: position.heading,
             ));
           }
         });
@@ -221,6 +328,17 @@ class _MapScreenState extends ConsumerState<MapScreen> {
           ],
         ),
         actions: [
+          if (_importedRoute != null)
+            IconButton(
+              icon: const Icon(Icons.layers_clear),
+              tooltip: AppStrings.clearImportTooltip,
+              onPressed: _clearImportedWalk,
+            ),
+          IconButton(
+            icon: const Icon(Icons.file_open),
+            tooltip: AppStrings.importWalkTooltip,
+            onPressed: _importWalk,
+          ),
           IconButton(
             icon: const Icon(Icons.settings),
             tooltip: AppStrings.gpsRateTooltip,
@@ -242,6 +360,16 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                     'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.virtualwalker.app',
               ),
+              if (_importedRoute != null && _importedRoute!.length >= 2)
+                PolylineLayer(
+                  polylines: [
+                    Polyline(
+                      points: _importedRoute!,
+                      color: Colors.purple,
+                      strokeWidth: 4,
+                    ),
+                  ],
+                ),
               if (routePoints.length >= 2)
                 PolylineLayer(
                   polylines: [

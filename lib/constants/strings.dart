@@ -2,7 +2,7 @@ class AppStrings {
   AppStrings._();
 
   static const appName = 'VirtualWalker';
-  static const version = 'v0.0.25';
+  static const version = 'v0.0.27';
   static const osmAttribution = '© OpenStreetMap contributors';
   static const locationPermissionDenied =
       'Location permission is required to track your walk.';
@@ -26,4 +26,14 @@ class AppStrings {
   static const gpsRateEvery30s = 'Every 30 seconds';
   static const gpsRateEveryMinute = 'Every minute';
   static const recenterTooltip = 'Center on my position';
+  static const saveWalkTitle = 'Save walk?';
+  static const saveWalkBody =
+      'Save the raw GPS points to a CSV file before they are cleared by the next walk?';
+  static const saveWalkDiscard = 'Discard';
+  static const saveWalkSave = 'Save CSV';
+  static const saveWalkDone = 'Walk saved.';
+  static const saveWalkCancelled = 'Walk not saved.';
+  static const importWalkTooltip = 'Import saved walk';
+  static const clearImportTooltip = 'Clear imported walk';
+  static const importWalkFailed = 'Could not read a walk from that file.';
 }
