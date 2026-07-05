@@ -37,9 +37,13 @@ class _StatsPanelState extends ConsumerState<StatsPanel> {
     final notifier = ref.read(walkRecorderProvider.notifier);
     _syncTicker(recorder.status);
 
+    // Extra bottom padding keeps the buttons above the system navigation bar
+    // (the app draws edge-to-edge under it on Android 15+).
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+
     return Container(
       color: Colors.white.withValues(alpha: 0.93),
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      padding: EdgeInsets.fromLTRB(16, 12, 16, 16 + bottomInset),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
