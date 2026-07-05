@@ -10,14 +10,33 @@ void gpsCallbackDispatcher() {
 
 /// Runs in the foreground service isolate. Streams GPS positions and sends
 /// every one to the main isolate — no distance filter, no accuracy filter.
+/// The snapshot interval (seconds, 0 = open loop) is read from saved data at
+/// start and can be changed live via sendDataToTask({'interval': n}).
 class GpsTaskHandler extends TaskHandler {
   StreamSubscription<Position>? _subscription;
 
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
+    final intervalSeconds =
+        await FlutterForegroundTask.getData<int>(key: 'gpsInterval') ?? 0;
+    _startGps(intervalSeconds);
+  }
+
+  @override
+  void onReceiveData(Object data) {
+    if (data is Map && data['interval'] is int) {
+      _startGps(data['interval'] as int);
+    }
+  }
+
+  void _startGps(int intervalSeconds) {
+    _subscription?.cancel();
+
     final settings = AndroidSettings(
       accuracy: LocationAccuracy.best,
       distanceFilter: 0,
+      intervalDuration:
+          intervalSeconds > 0 ? Duration(seconds: intervalSeconds) : null,
     );
 
     _subscription =

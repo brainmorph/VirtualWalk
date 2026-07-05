@@ -31,10 +31,12 @@ class ForegroundService {
     );
   }
 
-  static Future<ServiceRequestResult> startService() async {
+  static Future<ServiceRequestResult> startService(int intervalSeconds) async {
     if (await FlutterForegroundTask.isRunningService) {
       return const ServiceRequestSuccess();
     }
+    await FlutterForegroundTask.saveData(
+        key: 'gpsInterval', value: intervalSeconds);
     return FlutterForegroundTask.startService(
       serviceTypes: [ForegroundServiceTypes.location],
       notificationTitle: 'VirtualWalker',

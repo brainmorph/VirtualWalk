@@ -7,10 +7,23 @@ import 'package:latlong2/latlong.dart';
 
 import '../constants/strings.dart';
 import '../models/walk_point.dart';
+import '../providers/gps_settings_provider.dart';
 import '../providers/location_provider.dart';
 import '../providers/walk_recorder_provider.dart';
 import '../services/foreground_service.dart';
 import '../widgets/stats_panel.dart';
+
+/// Selectable GPS snapshot intervals: seconds paired with their menu label.
+/// 0 seconds means open loop — no throttling at all.
+const _gpsRateOptions = <(int, String)>[
+  (0, AppStrings.gpsRateOpenLoop),
+  (1, AppStrings.gpsRateEverySecond),
+  (2, AppStrings.gpsRateEvery2s),
+  (5, AppStrings.gpsRateEvery5s),
+  (10, AppStrings.gpsRateEvery10s),
+  (30, AppStrings.gpsRateEvery30s),
+  (60, AppStrings.gpsRateEveryMinute),
+];
 
 class MapScreen extends ConsumerStatefulWidget {
   const MapScreen({super.key});
@@ -72,6 +85,35 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     }
   }
 
+  Future<void> _showGpsRateDialog() async {
+    final current = ref.read(gpsSettingsProvider);
+    final selected = await showDialog<int>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text(AppStrings.gpsRateTitle),
+        children: [
+          RadioGroup<int>(
+            groupValue: current,
+            onChanged: (value) => Navigator.pop(ctx, value),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final (seconds, label) in _gpsRateOptions)
+                  RadioListTile<int>(
+                    value: seconds,
+                    title: Text(label),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    if (selected != null && selected != current) {
+      await ref.read(gpsSettingsProvider.notifier).setInterval(selected);
+    }
+  }
+
   Future<void> _requestServicePermissions() async {
     // Location first: locationStreamProvider would otherwise request it
     // concurrently with the dialogs below and could get auto-denied.
@@ -101,7 +143,8 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       if (next.status == RecordingStatus.recording &&
           prev?.status != RecordingStatus.recording) {
         setState(() => _serviceGpsActive = true);
-        ForegroundService.startService().then((result) {
+        ForegroundService.startService(ref.read(gpsSettingsProvider))
+            .then((result) {
           if (result is! ServiceRequestFailure || !context.mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -113,6 +156,14 @@ class _MapScreenState extends ConsumerState<MapScreen> {
           prev?.status == RecordingStatus.recording) {
         setState(() => _serviceGpsActive = false);
         ForegroundService.stopService();
+      }
+    });
+
+    // When the GPS rate changes while recording, forward it to the task
+    // handler so it restarts its stream without stopping the service.
+    ref.listen(gpsSettingsProvider, (prev, next) {
+      if (prev != next && _serviceGpsActive) {
+        FlutterForegroundTask.sendDataToTask({'interval': next});
       }
     });
 
@@ -163,6 +214,13 @@ class _MapScreenState extends ConsumerState<MapScreen> {
             ),
           ],
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            tooltip: AppStrings.gpsRateTooltip,
+            onPressed: _showGpsRateDialog,
+          ),
+        ],
       ),
       body: Stack(
         children: [

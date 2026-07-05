@@ -2,7 +2,7 @@ class AppStrings {
   AppStrings._();
 
   static const appName = 'VirtualWalker';
-  static const version = 'v0.0.23';
+  static const version = 'v0.0.24';
   static const osmAttribution = '© OpenStreetMap contributors';
   static const locationPermissionDenied =
       'Location permission is required to track your walk.';
@@ -16,4 +16,13 @@ class AppStrings {
   static const cancel = 'Cancel';
   static const stopAndSave = 'Stop & Save';
   static const waitingForGps = 'Waiting for GPS signal…';
+  static const gpsRateTitle = 'GPS snapshot rate';
+  static const gpsRateTooltip = 'App options';
+  static const gpsRateOpenLoop = 'Open loop — as fast as possible';
+  static const gpsRateEverySecond = 'Every second';
+  static const gpsRateEvery2s = 'Every 2 seconds';
+  static const gpsRateEvery5s = 'Every 5 seconds';
+  static const gpsRateEvery10s = 'Every 10 seconds';
+  static const gpsRateEvery30s = 'Every 30 seconds';
+  static const gpsRateEveryMinute = 'Every minute';
 }
