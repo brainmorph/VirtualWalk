@@ -2,7 +2,7 @@ class AppStrings {
   AppStrings._();
 
   static const appName = 'VirtualWalker';
-  static const version = 'v0.0.24';
+  static const version = 'v0.0.25';
   static const osmAttribution = '© OpenStreetMap contributors';
   static const locationPermissionDenied =
       'Location permission is required to track your walk.';
@@ -25,4 +25,5 @@ class AppStrings {
   static const gpsRateEvery10s = 'Every 10 seconds';
   static const gpsRateEvery30s = 'Every 30 seconds';
   static const gpsRateEveryMinute = 'Every minute';
+  static const recenterTooltip = 'Center on my position';
 }

@@ -85,6 +85,12 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     }
   }
 
+  void _recenter() {
+    final position = _currentPosition;
+    if (position == null) return;
+    _mapController.move(position, _mapController.camera.zoom);
+  }
+
   Future<void> _showGpsRateDialog() async {
     final current = ref.read(gpsSettingsProvider);
     final selected = await showDialog<int>(
@@ -271,7 +277,21 @@ class _MapScreenState extends ConsumerState<MapScreen> {
             bottom: 0,
             left: 0,
             right: 0,
-            child: const StatsPanel(),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 16, bottom: 12),
+                  child: FloatingActionButton(
+                    tooltip: AppStrings.recenterTooltip,
+                    onPressed: _currentPosition == null ? null : _recenter,
+                    child: const Icon(Icons.my_location),
+                  ),
+                ),
+                const StatsPanel(),
+              ],
+            ),
           ),
         ],
       ),
