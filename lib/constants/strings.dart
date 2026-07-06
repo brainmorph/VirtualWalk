@@ -2,7 +2,7 @@ class AppStrings {
   AppStrings._();
 
   static const appName = 'VirtualWalker';
-  static const version = 'v0.0.27';
+  static const version = 'v0.0.28';
   static const osmAttribution = '© OpenStreetMap contributors';
   static const locationPermissionDenied =
       'Location permission is required to track your walk.';
@@ -36,4 +36,9 @@ class AppStrings {
   static const importWalkTooltip = 'Import saved walk';
   static const clearImportTooltip = 'Clear imported walk';
   static const importWalkFailed = 'Could not read a walk from that file.';
+  static const projectNoWalk =
+      'Record or import a walk first, then long-press to anchor it.';
+  static const clearAnchorTooltip = 'Remove projected walk';
+  static const centerOnProjectedTooltip = 'Center on projected position';
+  static const centerOnRealTooltip = 'Center on real position';
 }

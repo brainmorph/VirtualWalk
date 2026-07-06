@@ -16,6 +16,7 @@ import '../providers/walk_recorder_provider.dart';
 import '../services/foreground_service.dart';
 import '../services/walk_exporter.dart';
 import '../services/walk_importer.dart';
+import '../services/walk_projector.dart';
 import '../widgets/stats_panel.dart';
 
 /// Selectable GPS snapshot intervals: seconds paired with their menu label.
@@ -51,7 +52,15 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   bool _permissionsReady = false;
 
   // A previously exported walk loaded from CSV, shown as its own route.
-  List<LatLng>? _importedRoute;
+  List<WalkPoint>? _importedWalk;
+
+  // Where the current walk shape is projected (set by long-press), and the
+  // last projected point, which acts as the "projected current position".
+  LatLng? _anchor;
+  LatLng? _projectedPosition;
+
+  // Which position the recenter button targets: real GPS or projected.
+  bool _centerOnProjected = false;
 
   @override
   void initState() {
@@ -162,12 +171,11 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       return;
     }
 
-    final route =
-        points.map((p) => LatLng(p.latitude, p.longitude)).toList();
-    setState(() => _importedRoute = route);
+    setState(() => _importedWalk = points);
     _mapController.fitCamera(
       CameraFit.coordinates(
-        coordinates: route,
+        coordinates:
+            points.map((p) => LatLng(p.latitude, p.longitude)).toList(),
         padding: const EdgeInsets.all(48),
       ),
     );
@@ -177,11 +185,43 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   }
 
   void _clearImportedWalk() {
-    setState(() => _importedRoute = null);
+    setState(() => _importedWalk = null);
+  }
+
+  /// The walk whose shape gets projected at the anchor: the recorded walk if
+  /// it has points, otherwise an imported walk.
+  List<WalkPoint>? _projectionSource() {
+    final recorded = ref.read(walkRecorderProvider).points;
+    if (recorded.isNotEmpty) return recorded;
+    return _importedWalk;
+  }
+
+  void _setAnchor(LatLng point) {
+    if (_projectionSource() == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(AppStrings.projectNoWalk)),
+      );
+      return;
+    }
+    setState(() => _anchor = point);
+  }
+
+  void _clearAnchor() {
+    setState(() {
+      _anchor = null;
+      _projectedPosition = null;
+      _centerOnProjected = false;
+    });
+  }
+
+  void _toggleCenterTarget() {
+    setState(() => _centerOnProjected = !_centerOnProjected);
+    _recenter();
   }
 
   void _recenter() {
-    final position = _currentPosition;
+    final position =
+        _centerOnProjected ? _projectedPosition : _currentPosition;
     if (position == null) return;
     _mapController.move(position, _mapController.camera.zoom);
   }
@@ -315,6 +355,25 @@ class _MapScreenState extends ConsumerState<MapScreen> {
         .map((p) => LatLng(p.latitude, p.longitude))
         .toList();
 
+    // Project the current walk shape at the anchor. Recomputed each build so
+    // the projected route and position grow live while recording.
+    var projectedRoute = const <LatLng>[];
+    final anchor = _anchor;
+    if (anchor != null) {
+      final source = _projectionSource();
+      if (source != null && source.isNotEmpty) {
+        projectedRoute = WalkProjector.project(
+                WalkProjector.toShape(source), anchor)
+            .map((p) => LatLng(p.latitude, p.longitude))
+            .toList();
+      }
+    }
+    _projectedPosition = projectedRoute.isEmpty ? null : projectedRoute.last;
+
+    final importedRoute = _importedWalk
+        ?.map((p) => LatLng(p.latitude, p.longitude))
+        .toList();
+
     return Scaffold(
       appBar: AppBar(
         title: Column(
@@ -328,7 +387,13 @@ class _MapScreenState extends ConsumerState<MapScreen> {
           ],
         ),
         actions: [
-          if (_importedRoute != null)
+          if (_anchor != null)
+            IconButton(
+              icon: const Icon(Icons.wrong_location),
+              tooltip: AppStrings.clearAnchorTooltip,
+              onPressed: _clearAnchor,
+            ),
+          if (_importedWalk != null)
             IconButton(
               icon: const Icon(Icons.layers_clear),
               tooltip: AppStrings.clearImportTooltip,
@@ -350,9 +415,10 @@ class _MapScreenState extends ConsumerState<MapScreen> {
         children: [
           FlutterMap(
             mapController: _mapController,
-            options: const MapOptions(
-              initialCenter: LatLng(37.7749, -122.4194),
+            options: MapOptions(
+              initialCenter: const LatLng(37.7749, -122.4194),
               initialZoom: 13,
+              onLongPress: (_, point) => _setAnchor(point),
             ),
             children: [
               TileLayer(
@@ -360,13 +426,35 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                     'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.virtualwalker.app',
               ),
-              if (_importedRoute != null && _importedRoute!.length >= 2)
+              if (importedRoute != null && importedRoute.length >= 2)
                 PolylineLayer(
                   polylines: [
                     Polyline(
-                      points: _importedRoute!,
+                      points: importedRoute,
                       color: Colors.purple,
                       strokeWidth: 4,
+                    ),
+                  ],
+                ),
+              if (projectedRoute.length >= 2)
+                PolylineLayer(
+                  polylines: [
+                    Polyline(
+                      points: projectedRoute,
+                      color: Colors.deepOrange,
+                      strokeWidth: 4,
+                    ),
+                  ],
+                ),
+              if (_projectedPosition != null)
+                CircleLayer(
+                  circles: [
+                    CircleMarker(
+                      point: _projectedPosition!,
+                      radius: 10,
+                      color: Colors.deepOrange.withValues(alpha: 0.8),
+                      borderColor: Colors.white,
+                      borderStrokeWidth: 2,
                     ),
                   ],
                 ),
@@ -409,11 +497,31 @@ class _MapScreenState extends ConsumerState<MapScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
+                if (_projectedPosition != null)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 16, bottom: 8),
+                    child: FloatingActionButton.small(
+                      heroTag: 'centerTargetToggle',
+                      tooltip: _centerOnProjected
+                          ? AppStrings.centerOnRealTooltip
+                          : AppStrings.centerOnProjectedTooltip,
+                      backgroundColor:
+                          _centerOnProjected ? Colors.deepOrange : null,
+                      onPressed: _toggleCenterTarget,
+                      child: const Icon(Icons.public),
+                    ),
+                  ),
                 Padding(
                   padding: const EdgeInsets.only(right: 16, bottom: 12),
                   child: FloatingActionButton(
+                    heroTag: 'recenter',
                     tooltip: AppStrings.recenterTooltip,
-                    onPressed: _currentPosition == null ? null : _recenter,
+                    onPressed: (_centerOnProjected
+                                ? _projectedPosition
+                                : _currentPosition) ==
+                            null
+                        ? null
+                        : _recenter,
                     child: const Icon(Icons.my_location),
                   ),
                 ),
