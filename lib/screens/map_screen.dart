@@ -11,6 +11,7 @@ import 'package:latlong2/latlong.dart';
 import '../constants/strings.dart';
 import '../models/walk_point.dart';
 import '../providers/gps_settings_provider.dart';
+import '../providers/hex_grid_provider.dart';
 import '../providers/location_provider.dart';
 import '../providers/walk_recorder_provider.dart';
 import '../services/foreground_service.dart';
@@ -104,6 +105,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
         _centered = true;
       }
     }
+    ref.read(hexGridProvider.notifier).clearContaining(latLng);
   }
 
   Future<void> _offerSaveWalk(WalkRecorderState walk) async {
@@ -276,6 +278,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   Widget build(BuildContext context) {
     final recorder = ref.watch(walkRecorderProvider);
     final recorderNotifier = ref.read(walkRecorderProvider.notifier);
+    final hexagons = ref.watch(hexGridProvider);
 
     // Start/stop the foreground service and its GPS task handler when
     // recording status transitions. The task handler sends positions back
@@ -297,6 +300,22 @@ class _MapScreenState extends ConsumerState<MapScreen> {
           prev?.status == RecordingStatus.recording) {
         setState(() => _serviceGpsActive = false);
         ForegroundService.stopService();
+      }
+
+      // Play pressed (idle -> recording, not resume-from-pause): lay out a
+      // fresh 12-hexagon grid around the current position.
+      if (next.status == RecordingStatus.recording &&
+          (prev == null || prev.status == RecordingStatus.idle)) {
+        final position = _currentPosition;
+        if (position != null) {
+          ref.read(hexGridProvider.notifier).generate(position);
+        }
+      }
+
+      // Stop pressed (anything -> idle, not pause): drop the hex grid.
+      if (next.status == RecordingStatus.idle &&
+          prev?.status != RecordingStatus.idle) {
+        ref.read(hexGridProvider.notifier).clear();
       }
 
       // Walk just ended with data on board — offer to export it before the
@@ -330,6 +349,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
             _mapController.move(latLng, 16);
             _centered = true;
           }
+          ref.read(hexGridProvider.notifier).clearContaining(latLng);
           if (!_serviceGpsActive) {
             recorderNotifier.addPoint(WalkPoint(
               latitude: position.latitude,
@@ -426,6 +446,20 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                     'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.virtualwalker.app',
               ),
+              if (hexagons.isNotEmpty)
+                PolygonLayer(
+                  polygons: [
+                    for (final hex in hexagons)
+                      Polygon(
+                        points: hex.vertices,
+                        isFilled: true,
+                        color: Colors.deepPurple.withValues(alpha: 0.3),
+                        borderColor:
+                            Colors.deepPurple.withValues(alpha: 0.6),
+                        borderStrokeWidth: 2,
+                      ),
+                  ],
+                ),
               if (importedRoute != null && importedRoute.length >= 2)
                 PolylineLayer(
                   polylines: [
